@@ -1,5 +1,4 @@
 // Firebase Configuration
-// Replace these values with your actual Firebase project settings
 const firebaseConfig = {
   apiKey: "AIzaSyC8s_ym-9Tx3Yf6aXzI-aAYVKxp2cFKCrI",
   authDomain: "smartkiosk-f80b5.firebaseapp.com",
