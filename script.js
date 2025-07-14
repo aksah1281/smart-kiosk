@@ -1,6 +1,13 @@
 // Initialize Firebase
-firebase.initializeApp(window.firebaseConfig);
-const db = firebase.firestore();
+let db;
+try {
+    firebase.initializeApp(window.firebaseConfig);
+    db = firebase.database();
+    console.log('Firebase Realtime Database initialized successfully');
+} catch (error) {
+    console.error('Firebase initialization error:', error);
+    alert('Firebase initialization failed. Please check the console for details.');
+}
 
 // Global variables
 let currentScreen = 'registration';
@@ -33,6 +40,24 @@ function initializeApp() {
         sessionId = generateSessionId();
         updateStatus('New Session');
         console.log('Generated Session ID:', sessionId);
+    }
+    
+    // Test Firebase connection
+    testFirebaseConnection();
+}
+
+// Test Firebase connection
+async function testFirebaseConnection() {
+    try {
+        console.log('Testing Firebase Realtime Database connection...');
+        if (!db) {
+            throw new Error('Firebase database not initialized');
+        }
+        const testRef = await db.ref('test/connection').once('value');
+        console.log('Firebase Realtime Database connection successful');
+    } catch (error) {
+        console.error('Firebase connection test failed:', error);
+        // Don't show alert for connection test, just log the error
     }
 }
 
@@ -113,8 +138,12 @@ async function handleFormSubmission(event) {
     showProcessingScreen();
     
     try {
+        console.log('Attempting to save user data:', registrationData);
+        
         // Store in Firebase
         const result = await saveUserToFirebase(registrationData);
+        
+        console.log('Save result:', result);
         
         if (result.success) {
             showSuccessScreen(registrationData.name, registrationData.email);
@@ -123,43 +152,49 @@ async function handleFormSubmission(event) {
         }
     } catch (error) {
         console.error('Registration error:', error);
-        showErrorScreen('Network error. Please check your connection and try again.');
+        showErrorScreen('Firebase error: ' + error.message);
     }
 }
 
 // Firebase operations
 async function saveUserToFirebase(userData) {
     try {
-        // Generate a unique fingerprint ID (you can modify this logic)
-        const fingerprintId = Math.floor(Math.random() * 1000) + 1;
+        console.log('Starting Firebase save operation...');
+        
+        // Check if Firebase is initialized
+        if (!firebase.apps.length) {
+            throw new Error('Firebase not initialized');
+        }
         
         const userRecord = {
-            fingerprint_id: fingerprintId,
             name: userData.name,
             email: userData.email,
             phone: userData.phone,
             session_id: userData.session_id,
-            registered: userData.registered,
-            registration_complete: userData.registration_complete,
+            registered: true,
+            registration_complete: false, // Will be true after ESP32 adds fingerprint
             timestamp: userData.timestamp,
-            status: userData.status
+            status: 'waiting_for_fingerprint' // ESP32 will change this to 'active'
         };
         
-        // Save to Firebase Firestore
-        await db.collection('users').doc(fingerprintId.toString()).set(userRecord);
+        console.log('User record to save:', userRecord);
         
-        console.log('User saved to Firebase:', userRecord);
+        // Save to Firebase Realtime Database using session ID as key
+        const userRef = db.ref('users/' + userData.session_id);
+        await userRef.set(userRecord);
+        
+        console.log('User saved to Firebase Realtime Database successfully:', userRecord);
         
         return {
             success: true,
-            fingerprintId: fingerprintId,
+            sessionId: userData.session_id,
             data: userRecord
         };
     } catch (error) {
         console.error('Firebase save error:', error);
         return {
             success: false,
-            message: error.message
+            message: 'Firebase error: ' + error.message
         };
     }
 }
@@ -167,12 +202,10 @@ async function saveUserToFirebase(userData) {
 // Get user by session ID
 async function getUserBySessionId(sessionId) {
     try {
-        const snapshot = await db.collection('users')
-            .where('session_id', '==', sessionId)
-            .get();
+        const snapshot = await db.ref('users/' + sessionId).once('value');
         
-        if (!snapshot.empty) {
-            const userData = snapshot.docs[0].data();
+        if (snapshot.exists()) {
+            const userData = snapshot.val();
             return {
                 success: true,
                 data: userData
@@ -305,11 +338,64 @@ function validatePhone(phone) {
     return phoneRegex.test(phone.replace(/\s/g, ''));
 }
 
+// Update user with fingerprint ID (for ESP32 to call)
+async function updateUserWithFingerprint(sessionId, fingerprintId) {
+    try {
+        const userRef = db.ref('users/' + sessionId);
+        await userRef.update({
+            fingerprint_id: fingerprintId,
+            registration_complete: true,
+            status: 'active',
+            fingerprint_timestamp: Date.now()
+        });
+        
+        console.log('User updated with fingerprint ID:', fingerprintId);
+        return {
+            success: true,
+            message: 'Fingerprint linked successfully'
+        };
+    } catch (error) {
+        console.error('Error updating user with fingerprint:', error);
+        return {
+            success: false,
+            message: error.message
+        };
+    }
+}
+
+// Get users waiting for fingerprint (for ESP32 to poll)
+async function getUsersWaitingForFingerprint() {
+    try {
+        const snapshot = await db.ref('users').orderByChild('status').equalTo('waiting_for_fingerprint').once('value');
+        
+        if (snapshot.exists()) {
+            const users = snapshot.val();
+            return {
+                success: true,
+                users: users
+            };
+        } else {
+            return {
+                success: false,
+                message: 'No users waiting for fingerprint'
+            };
+        }
+    } catch (error) {
+        console.error('Error getting users waiting for fingerprint:', error);
+        return {
+            success: false,
+            message: error.message
+        };
+    }
+}
+
 // Export functions for ESP32 integration
 window.SmartKiosk = {
     getSessionId: getCurrentSessionId,
     getQRCodeUrl: getQRCodeUrl,
     getUserBySessionId: getUserBySessionId,
     saveUser: saveUserToFirebase,
-    generateSessionId: generateSessionId
+    generateSessionId: generateSessionId,
+    updateUserWithFingerprint: updateUserWithFingerprint,
+    getUsersWaitingForFingerprint: getUsersWaitingForFingerprint
 }; 
