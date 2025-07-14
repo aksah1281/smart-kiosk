@@ -1,15 +1,12 @@
+// Initialize Firebase
+firebase.initializeApp(window.firebaseConfig);
+const db = firebase.firestore();
+
 // Global variables
-let currentScreen = 'welcome';
+let currentScreen = 'registration';
 let registrationData = {};
 let countdownInterval;
-
-// ESP32 API Configuration
-const ESP32_API_URL = 'http://192.168.1.100'; // Change to your ESP32 IP
-const API_ENDPOINTS = {
-    submitRegistration: '/api/register',
-    checkStatus: '/api/status',
-    getQRCode: '/api/qr'
-};
+let sessionId = null;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
@@ -23,20 +20,27 @@ function initializeApp() {
         registrationForm.addEventListener('submit', handleFormSubmission);
     }
     
-    // Check if we're coming from QR code
+    // Check if we have a session ID from URL
     const urlParams = new URLSearchParams(window.location.search);
-    const registrationId = urlParams.get('id');
+    const sessionFromUrl = urlParams.get('session');
     
-    if (registrationId) {
-        // Store the registration ID from QR code
-        localStorage.setItem('registrationId', registrationId);
-        updateStatus('Registration Mode');
+    if (sessionFromUrl) {
+        sessionId = sessionFromUrl;
+        updateStatus('Session Active');
+        console.log('Session ID from URL:', sessionId);
     } else {
-        // Generate a new registration ID if none provided
-        const newId = generateRegistrationId();
-        localStorage.setItem('registrationId', newId);
-        updateStatus('Ready');
+        // Generate a new session ID if none provided
+        sessionId = generateSessionId();
+        updateStatus('New Session');
+        console.log('Generated Session ID:', sessionId);
     }
+}
+
+// Generate unique session ID (13 digits as per notes)
+function generateSessionId() {
+    const timestamp = Date.now().toString();
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return timestamp + random;
 }
 
 // Screen management functions
@@ -83,17 +87,6 @@ function showErrorScreen(message) {
     document.getElementById('error-message').textContent = message;
 }
 
-// QR Code generation (for ESP32 to use)
-function generateQRCode() {
-    const registrationId = localStorage.getItem('registrationId') || generateRegistrationId();
-    const qrUrl = `${window.location.origin}${window.location.pathname}?id=${registrationId}`;
-    return qrUrl;
-}
-
-function generateRegistrationId() {
-    return 'REG_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
-
 // Form handling
 async function handleFormSubmission(event) {
     event.preventDefault();
@@ -103,8 +96,11 @@ async function handleFormSubmission(event) {
         name: formData.get('name'),
         email: formData.get('email'),
         phone: formData.get('phone') || '',
-        registrationId: localStorage.getItem('registrationId') || generateRegistrationId(),
-        timestamp: new Date().toISOString()
+        session_id: sessionId,
+        timestamp: Date.now(),
+        registered: true,
+        registration_complete: true,
+        status: 'active'
     };
     
     // Validate form data
@@ -117,13 +113,13 @@ async function handleFormSubmission(event) {
     showProcessingScreen();
     
     try {
-        // Submit to ESP32
-        const response = await submitToESP32(registrationData);
+        // Store in Firebase
+        const result = await saveUserToFirebase(registrationData);
         
-        if (response.success) {
+        if (result.success) {
             showSuccessScreen(registrationData.name, registrationData.email);
         } else {
-            showErrorScreen(response.message || 'Registration failed. Please try again.');
+            showErrorScreen(result.message || 'Registration failed. Please try again.');
         }
     } catch (error) {
         console.error('Registration error:', error);
@@ -131,27 +127,75 @@ async function handleFormSubmission(event) {
     }
 }
 
-// API communication with ESP32
-async function submitToESP32(data) {
+// Firebase operations
+async function saveUserToFirebase(userData) {
     try {
-        const response = await fetch(`${ESP32_API_URL}${API_ENDPOINTS.submitRegistration}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data)
-        });
+        // Generate a unique fingerprint ID (you can modify this logic)
+        const fingerprintId = Math.floor(Math.random() * 1000) + 1;
         
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        const userRecord = {
+            fingerprint_id: fingerprintId,
+            name: userData.name,
+            email: userData.email,
+            phone: userData.phone,
+            session_id: userData.session_id,
+            registered: userData.registered,
+            registration_complete: userData.registration_complete,
+            timestamp: userData.timestamp,
+            status: userData.status
+        };
         
-        const result = await response.json();
-        return result;
+        // Save to Firebase Firestore
+        await db.collection('users').doc(fingerprintId.toString()).set(userRecord);
+        
+        console.log('User saved to Firebase:', userRecord);
+        
+        return {
+            success: true,
+            fingerprintId: fingerprintId,
+            data: userRecord
+        };
     } catch (error) {
-        console.error('API Error:', error);
-        throw error;
+        console.error('Firebase save error:', error);
+        return {
+            success: false,
+            message: error.message
+        };
     }
+}
+
+// Get user by session ID
+async function getUserBySessionId(sessionId) {
+    try {
+        const snapshot = await db.collection('users')
+            .where('session_id', '==', sessionId)
+            .get();
+        
+        if (!snapshot.empty) {
+            const userData = snapshot.docs[0].data();
+            return {
+                success: true,
+                data: userData
+            };
+        } else {
+            return {
+                success: false,
+                message: 'User not found'
+            };
+        }
+    } catch (error) {
+        console.error('Firebase query error:', error);
+        return {
+            success: false,
+            message: error.message
+        };
+    }
+}
+
+// Generate QR code URL for ESP32
+function generateQRCodeUrl() {
+    const baseUrl = window.location.origin + window.location.pathname;
+    return `${baseUrl}?session=${sessionId}`;
 }
 
 // Progress animation
@@ -183,7 +227,7 @@ function startCountdown() {
         
         if (countdown <= 0) {
             clearInterval(countdownInterval);
-            // Redirect or close window
+            // Close window or redirect
             window.close();
         }
     }, 1000);
@@ -203,6 +247,7 @@ function updateStatus(status) {
             statusIcon.className = 'fas fa-circle';
             switch (status.toLowerCase()) {
                 case 'ready':
+                case 'session active':
                     statusIcon.style.color = '#4CAF50';
                     break;
                 case 'processing':
@@ -214,6 +259,9 @@ function updateStatus(status) {
                 case 'error':
                     statusIcon.style.color = '#f44336';
                     break;
+                case 'new session':
+                    statusIcon.style.color = '#2196F3';
+                    break;
                 default:
                     statusIcon.style.color = '#666';
             }
@@ -222,12 +270,12 @@ function updateStatus(status) {
 }
 
 // Utility functions
-function getCurrentRegistrationId() {
-    return localStorage.getItem('registrationId') || generateRegistrationId();
+function getCurrentSessionId() {
+    return sessionId;
 }
 
-function getWebsiteUrl() {
-    return window.location.origin + window.location.pathname;
+function getQRCodeUrl() {
+    return generateQRCodeUrl();
 }
 
 // Error handling
@@ -252,49 +300,16 @@ function validateEmail(email) {
 }
 
 function validatePhone(phone) {
-    if (!phone) return true; // Optional field
+    if (!phone) return true; // Phone is optional
     const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
     return phoneRegex.test(phone.replace(/\s/g, ''));
 }
 
-// Add real-time validation
-document.addEventListener('DOMContentLoaded', function() {
-    const emailInput = document.getElementById('email');
-    const phoneInput = document.getElementById('phone');
-    
-    if (emailInput) {
-        emailInput.addEventListener('blur', function() {
-            if (this.value && !validateEmail(this.value)) {
-                this.style.borderColor = '#f44336';
-                this.setCustomValidity('Please enter a valid email address');
-            } else {
-                this.style.borderColor = '#e1e5e9';
-                this.setCustomValidity('');
-            }
-        });
-    }
-    
-    if (phoneInput) {
-        phoneInput.addEventListener('blur', function() {
-            if (this.value && !validatePhone(this.value)) {
-                this.style.borderColor = '#f44336';
-                this.setCustomValidity('Please enter a valid phone number');
-            } else {
-                this.style.borderColor = '#e1e5e9';
-                this.setCustomValidity('');
-            }
-        });
-    }
-});
-
-// Cleanup on page unload
-window.addEventListener('beforeunload', function() {
-    if (countdownInterval) {
-        clearInterval(countdownInterval);
-    }
-});
-
-// Export functions for global access
-window.getCurrentRegistrationId = getCurrentRegistrationId;
-window.getWebsiteUrl = getWebsiteUrl;
-window.generateQRCode = generateQRCode; 
+// Export functions for ESP32 integration
+window.SmartKiosk = {
+    getSessionId: getCurrentSessionId,
+    getQRCodeUrl: getQRCodeUrl,
+    getUserBySessionId: getUserBySessionId,
+    saveUser: saveUserToFirebase,
+    generateSessionId: generateSessionId
+}; 
