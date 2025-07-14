@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Kiosk Registration</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-fingerprint"></i>
+                <span>Smart Kiosk</span>
+            </div>
+            <div class="status" id="status">
+                <i class="fas fa-circle"></i>
+                <span>Ready</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Registration Form -->
+            <div class="screen" id="registration-screen">
+                <div class="form-container">
+                    <div class="form-header">
+                        <i class="fas fa-user-plus"></i>
+                        <h2>Smart Kiosk Registration</h2>
+                        <p>Enter your details to register your fingerprint on the kiosk</p>
+                    </div>
+                    
+                    <form id="registration-form" class="registration-form">
+                        <div class="form-group">
+                            <label for="name">
+                                <i class="fas fa-user"></i>
+                                Full Name
+                            </label>
+                            <input type="text" id="name" name="name" required 
+                                   placeholder="Enter your full name">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="email">
+                                <i class="fas fa-envelope"></i>
+                                Email Address
+                            </label>
+                            <input type="email" id="email" name="email" required 
+                                   placeholder="Enter your email address">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="phone">
+                                <i class="fas fa-phone"></i>
+                                Phone Number (Optional)
+                            </label>
+                            <input type="tel" id="phone" name="phone" 
+                                   placeholder="Enter your phone number">
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-fingerprint"></i>
+                                Register Fingerprint
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Processing Screen -->
+            <div class="screen hidden" id="processing-screen">
+                <div class="processing-content">
+                    <div class="processing-icon">
+                        <i class="fas fa-cog fa-spin"></i>
+                    </div>
+                    <h2>Processing Registration</h2>
+                    <p>Please wait while we process your registration...</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Success Screen -->
+            <div class="screen hidden" id="success-screen">
+                <div class="success-content">
+                    <div class="success-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <h2>Registration Successful!</h2>
+                    <p>Your fingerprint has been registered successfully.</p>
+                    <div class="user-info">
+                        <p><strong>Name:</strong> <span id="success-name"></span></p>
+                        <p><strong>Email:</strong> <span id="success-email"></span></p>
+                    </div>
+                    <div class="countdown">
+                        <p>Returning to kiosk in <span id="countdown">15</span> seconds...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Screen -->
+            <div class="screen hidden" id="error-screen">
+                <div class="error-content">
+                    <div class="error-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h2>Registration Failed</h2>
+                    <p id="error-message">An error occurred during registration.</p>
+                    <button class="btn btn-secondary" onclick="showRegistrationScreen()">
+                        <i class="fas fa-redo"></i>
+                        Try Again
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2024 Smart Kiosk System. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
